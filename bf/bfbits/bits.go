@@ -63,7 +63,9 @@ func (bf *bloomFilter) Add(item []byte) error {
 		}
 
 		idx := int(h.Sum64() % uint64(bf.size))
+		// fmt.Printf("%b", bf.bits[idx/64])
 		bf.bits[idx/64] |= 1 << (idx % 64)
+		// fmt.Printf("%b", bf.bits[idx/64])
 	}
 
 	return nil

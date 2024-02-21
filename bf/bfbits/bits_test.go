@@ -1,8 +1,69 @@
 package bfbits
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"runtime"
+	"sync"
 	"testing"
 )
+
+func BenchmarkBloomFilter_Contains(b *testing.B) {
+	filter := NewBloomFilter(100_000_000, WithHashNum(3))
+	wCh := make(chan []byte, 1)
+	rCh := make(chan []byte, 1)
+	wChGroup := sync.WaitGroup{}
+	wChGroup.Add(runtime.NumCPU())
+
+	buf := make([]byte, 16)
+	for i := 0; i < runtime.NumCPU(); i++ {
+		go func() {
+			defer wChGroup.Done()
+			for i := 0; i < 10_000_000/runtime.NumCPU(); i++ {
+				read, err := rand.Read(buf)
+				if err != nil {
+					b.Error(err)
+					return
+				}
+
+				chunk := make([]byte, hex.EncodedLen(16))
+				n := hex.Encode(chunk, buf[:read])
+				wCh <- chunk[:n]
+				rCh <- chunk[:n]
+			}
+		}()
+	}
+
+	go func() {
+		wChGroup.Wait()
+		close(wCh)
+		close(rCh)
+	}()
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for bytes := range wCh {
+			if err := filter.Add(bytes); err != nil {
+				b.Error(err)
+				return
+			}
+		}
+	}()
+
+	go func() {
+		wg.Done()
+		for bytes := range rCh {
+			if _, err := filter.Contains(bytes); err != nil {
+				b.Error(err)
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+}
 
 func TestBloomFilter_Add(t *testing.T) {
 	bf := NewBloomFilter(10000, WithHashNum(1))
